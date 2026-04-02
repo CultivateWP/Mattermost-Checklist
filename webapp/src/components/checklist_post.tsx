@@ -121,9 +121,6 @@ export default function ChecklistPost({post}: Props) {
             <div className='mm-checklist-post__items'>
                 {checklist.items.map((item) => {
                     const isPending = pendingItemId === item.id;
-                    const meta = item.checked ?
-                        `Checked by ${item.checked_by_username ? '@' + item.checked_by_username : 'a teammate'}` :
-                        'Open';
 
                     return (
                         <button

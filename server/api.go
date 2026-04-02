@@ -12,11 +12,12 @@ import (
 func (p *Plugin) initRouter() *mux.Router {
 	router := mux.NewRouter()
 
-	// Middleware to require that the user is logged in
-	router.Use(p.MattermostAuthorizationRequired)
-
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
 	apiRouter.HandleFunc("/checklists/{postID}/items/{itemID}/toggle", p.handleToggleChecklistItem).Methods(http.MethodPost)
+
+	authedRouter := apiRouter.NewRoute().Subrouter()
+	authedRouter.Use(p.MattermostAuthorizationRequired)
+	authedRouter.HandleFunc("/posts/{postID}/convert", p.handleConvertPostToChecklist).Methods(http.MethodPost)
 
 	return router
 }
@@ -31,14 +32,35 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 
 func (p *Plugin) MattermostAuthorizationRequired(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		userID := r.Header.Get("Mattermost-User-ID")
-		if userID == "" {
-			http.Error(w, "Not authorized", http.StatusUnauthorized)
+		userID, err := p.userIDFromRequest(r)
+		if err != nil || userID == "" {
+			writeAPIError(w, http.StatusUnauthorized, "not authorized")
 			return
 		}
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (p *Plugin) userIDFromRequest(r *http.Request) (string, error) {
+	if userID := r.Header.Get("Mattermost-User-ID"); userID != "" {
+		return userID, nil
+	}
+
+	cookie, err := r.Cookie("MMAUTHTOKEN")
+	if err != nil || cookie == nil || cookie.Value == "" {
+		return "", err
+	}
+
+	session, appErr := p.API.GetSession(cookie.Value)
+	if appErr != nil || session == nil {
+		if appErr != nil {
+			return "", appErr
+		}
+		return "", nil
+	}
+
+	return session.UserId, nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

@@ -18,7 +18,10 @@ const (
 	defaultChecklistTitle   = "Checklist"
 )
 
-var errChecklistUsage = errors.New("usage: /checklist [title ::] item one | item two | item three")
+var (
+	errChecklistUsage        = errors.New("usage: /checklist [title ::] item one | item two | item three")
+	errChecklistItemsMissing = errors.New("no checklist items found in the post")
+)
 
 type Checklist struct {
 	Title     string          `json:"title"`
@@ -51,7 +54,7 @@ func (p *Plugin) executeChecklistCommand(args *model.CommandArgs) (*model.Comman
 		Type:      checklistPostType,
 		Message:   renderChecklistMarkdown(checklist),
 		Props: map[string]any{
-			checklistPropsKey: checklist,
+			checklistPropsKey: checklistToPropsValue(checklist),
 		},
 	}
 
@@ -133,6 +136,130 @@ func renderChecklistMarkdown(checklist *Checklist) string {
 	return strings.TrimSpace(builder.String())
 }
 
+func checklistFromMessage(message, creatorID string) (*Checklist, error) {
+	lines := strings.Split(message, "\n")
+	items := make([]ChecklistItem, 0)
+	title := defaultChecklistTitle
+	firstContentLine := ""
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+
+		if firstContentLine == "" {
+			firstContentLine = trimmed
+		}
+
+		if text, checked, ok := extractTaskChecklistItem(trimmed); ok {
+			item := ChecklistItem{
+				ID:      fmt.Sprintf("item-%d", len(items)+1),
+				Text:    text,
+				Checked: checked,
+			}
+			if checked {
+				item.CheckedAt = model.GetMillis()
+			}
+			items = append(items, item)
+			continue
+		}
+
+		text, ok := extractChecklistItem(trimmed)
+		if !ok {
+			continue
+		}
+
+		items = append(items, ChecklistItem{
+			ID:   fmt.Sprintf("item-%d", len(items)+1),
+			Text: text,
+		})
+	}
+
+	if len(items) == 0 {
+		return nil, errChecklistItemsMissing
+	}
+
+	if firstContentLine != "" {
+		if _, _, ok := extractTaskChecklistItem(firstContentLine); !ok {
+			if text, ok := extractChecklistItem(firstContentLine); !ok || text == "" {
+				title = strings.TrimSpace(strings.TrimPrefix(firstContentLine, "#"))
+			}
+		}
+	}
+
+	return &Checklist{
+		Title:     title,
+		CreatorID: creatorID,
+		UpdatedAt: model.GetMillis(),
+		Items:     items,
+	}, nil
+}
+
+func extractTaskChecklistItem(line string) (string, bool, bool) {
+	trimmed := strings.TrimSpace(line)
+	for _, marker := range []string{"- [ ] ", "* [ ] ", "+ [ ] ", "- [x] ", "* [x] ", "+ [x] ", "- [X] ", "* [X] ", "+ [X] "} {
+		if strings.HasPrefix(trimmed, marker) {
+			text := strings.TrimSpace(strings.TrimPrefix(trimmed, marker))
+			if text == "" {
+				return "", false, false
+			}
+			checked := strings.Contains(marker, "[x]") || strings.Contains(marker, "[X]")
+			return text, checked, true
+		}
+	}
+
+	return "", false, false
+}
+
+func extractChecklistItem(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return "", false
+	}
+
+	for _, marker := range []string{"- ", "* ", "+ "} {
+		if strings.HasPrefix(trimmed, marker) {
+			text := strings.TrimSpace(strings.TrimPrefix(trimmed, marker))
+			return text, text != ""
+		}
+	}
+
+	periodIndex := strings.Index(trimmed, ". ")
+	if periodIndex > 0 {
+		prefix := trimmed[:periodIndex]
+		if prefix != "" {
+			isNumbered := true
+			for _, r := range prefix {
+				if r < '0' || r > '9' {
+					isNumbered = false
+					break
+				}
+			}
+			if isNumbered {
+				text := strings.TrimSpace(trimmed[periodIndex+2:])
+				return text, text != ""
+			}
+		}
+	}
+
+	return "", false
+}
+
+func checklistToPropsValue(checklist *Checklist) map[string]any {
+	bytes, err := json.Marshal(checklist)
+	if err != nil {
+		return map[string]any{}
+	}
+
+	var propsValue map[string]any
+	if err := json.Unmarshal(bytes, &propsValue); err != nil {
+		return map[string]any{}
+	}
+
+	return propsValue
+}
+
 func checklistFromPost(post *model.Post) (*Checklist, error) {
 	if post == nil || post.Type != checklistPostType {
 		return nil, errors.New("post is not a checklist")
@@ -163,7 +290,7 @@ func applyChecklistToPost(post *model.Post, checklist *Checklist) {
 
 	post.Type = checklistPostType
 	post.Message = renderChecklistMarkdown(checklist)
-	post.Props[checklistPropsKey] = checklist
+	post.Props[checklistPropsKey] = checklistToPropsValue(checklist)
 }
 
 func toggleChecklistItem(checklist *Checklist, itemID, userID, username string) error {
@@ -192,11 +319,7 @@ func toggleChecklistItem(checklist *Checklist, itemID, userID, username string) 
 }
 
 func (p *Plugin) handleToggleChecklistItem(w http.ResponseWriter, r *http.Request) {
-	userID := r.Header.Get("Mattermost-User-ID")
-	if userID == "" {
-		writeAPIError(w, http.StatusUnauthorized, "not authorized")
-		return
-	}
+	userID, _ := p.userIDFromRequest(r)
 
 	vars := mux.Vars(r)
 	postID := vars["postID"]
@@ -219,9 +342,11 @@ func (p *Plugin) handleToggleChecklistItem(w http.ResponseWriter, r *http.Reques
 	}
 
 	username := ""
-	user, appErr := p.API.GetUser(userID)
-	if appErr == nil && user != nil {
-		username = user.Username
+	if userID != "" {
+		user, appErr := p.API.GetUser(userID)
+		if appErr == nil && user != nil {
+			username = user.Username
+		}
 	}
 
 	if err := toggleChecklistItem(checklist, itemID, userID, username); err != nil {
@@ -245,5 +370,53 @@ func (p *Plugin) handleToggleChecklistItem(w http.ResponseWriter, r *http.Reques
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"checklist": updatedChecklist,
+	})
+}
+
+func (p *Plugin) handleConvertPostToChecklist(w http.ResponseWriter, r *http.Request) {
+	userID, err := p.userIDFromRequest(r)
+	if err != nil || userID == "" {
+		writeAPIError(w, http.StatusUnauthorized, "not authorized")
+		return
+	}
+
+	postID := mux.Vars(r)["postID"]
+	if postID == "" {
+		writeAPIError(w, http.StatusBadRequest, "postID is required")
+		return
+	}
+
+	post, appErr := p.API.GetPost(postID)
+	if appErr != nil {
+		writeAPIError(w, http.StatusNotFound, "post not found")
+		return
+	}
+
+	if post.Type == checklistPostType {
+		writeAPIError(w, http.StatusBadRequest, "post is already a checklist")
+		return
+	}
+
+	checklist, err := checklistFromMessage(post.Message, post.UserId)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	applyChecklistToPost(post, checklist)
+	updatedPost, appErr := p.API.UpdatePost(post)
+	if appErr != nil {
+		writeAPIError(w, http.StatusInternalServerError, "unable to convert post to checklist")
+		return
+	}
+
+	updatedChecklist, err := checklistFromPost(updatedPost)
+	if err != nil {
+		updatedChecklist = checklist
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"checklist": updatedChecklist,
+		"post_id":    updatedPost.Id,
 	})
 }

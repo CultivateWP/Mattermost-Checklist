@@ -1,10 +1,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
-	"sync"
 	"strings"
+	"sync"
 
 	"github.com/gorilla/mux"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -70,6 +71,34 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 	default:
 		return ephemeralResponse(fmt.Sprintf("Unknown command: %s", args.Command)), nil
 	}
+}
+
+func (p *Plugin) MessageWillBePosted(c *plugin.Context, post *model.Post) (*model.Post, string) {
+	if post == nil || post.Type != "" || strings.TrimSpace(post.Message) == "" {
+		return post, ""
+	}
+
+	checklist, err := checklistFromMessage(post.Message, post.UserId)
+	if err != nil {
+		if errors.Is(err, errChecklistItemsMissing) {
+			return post, ""
+		}
+		return post, err.Error()
+	}
+
+	hasTaskSyntax := false
+	for _, line := range strings.Split(post.Message, "\n") {
+		if _, _, ok := extractTaskChecklistItem(line); ok {
+			hasTaskSyntax = true
+			break
+		}
+	}
+	if !hasTaskSyntax {
+		return post, ""
+	}
+
+	applyChecklistToPost(post, checklist)
+	return post, ""
 }
 
 func ephemeralResponse(text string) *model.CommandResponse {

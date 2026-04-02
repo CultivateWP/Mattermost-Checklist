@@ -7,13 +7,13 @@ import ChecklistPost from 'components/checklist_post';
 
 import type {PluginRegistry} from 'types/mattermost-webapp';
 
+const checklistPostType = 'custom_checklist';
+
 export default class Plugin {
     public async initialize(registry: PluginRegistry) {
         registry.registerPostTypeComponent(checklistPostType, ChecklistPost);
     }
 }
-
-const checklistPostType = 'custom_checklist';
 
 declare global {
     interface Window {
