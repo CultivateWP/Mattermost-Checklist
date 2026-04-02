@@ -133,7 +133,6 @@ export default function ChecklistPost({post}: Props) {
                             <span className='mm-checklist-post__checkbox'>{item.checked ? '✓' : ''}</span>
                             <span className='mm-checklist-post__body'>
                                 <span className='mm-checklist-post__item-text'>{item.text}</span>
-                                <span className='mm-checklist-post__meta'>{meta}</span>
                             </span>
                             <span className='mm-checklist-post__status'>{isPending ? 'Saving...' : ''}</span>
                         </button>
