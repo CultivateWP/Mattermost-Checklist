@@ -1,39 +1,122 @@
 # Interactive Checklist Plugin
 
-This Mattermost plugin adds a shared checklist post type. A user creates a checklist with a slash command, and anyone in the channel can tick items on or off directly inside the message.
+This Mattermost plugin turns checklist-style posts into shared, interactive checklists that everyone in the channel can update.
 
-## Usage
+## Current usage
 
-Create a checklist with:
+The plugin supports two ways to create a checklist.
+
+### 1. Use the `/checklist` slash command
+
+Create a checklist from a single command:
 
 ```text
 /checklist item one | item two | item three
 ```
 
-Add an optional title with:
+Add an optional title with `::`:
 
 ```text
 /checklist Launch prep :: QA signoff | update docs | post release note
 ```
 
-The plugin stores checklist state in the post props and also updates the markdown body so non-enhanced clients still see the current state.
+That creates a custom checklist post with:
 
-## Project Layout
+- clickable checklist items in the Mattermost webapp
+- a completion summary at the top
+- shared state for the whole channel
+- markdown fallback in the post body for clients that do not render the custom UI
 
-- `server/checklist.go`: slash command handling, checklist parsing, and toggle API.
-- `server/api.go`: authenticated plugin routes.
-- `webapp/src/components/checklist_post.tsx`: custom post renderer with interactive checkboxes.
-- `plugin.json`: Mattermost manifest for the bundled server and webapp plugin.
+### 2. Post a normal Mattermost task list
 
-## Building
+If someone posts a standard Mattermost markdown task list, the plugin automatically converts it into an interactive checklist post.
 
-The standard Mattermost plugin workflow still applies:
+Example:
+
+```md
+### Launch prep
+
+- [ ] QA signoff
+- [ ] Update docs
+- [ ] Post release note
+```
+
+Notes:
+
+- the first non-checklist line becomes the checklist title
+- supported task markers include `- [ ]`, `* [ ]`, `+ [ ]`, `- [x]`, `* [x]`, and `+ [x]`
+- plain bullet lists like `- item one` are not auto-converted; they stay normal posts
+
+## Editing behavior
+
+Once a post is a checklist:
+
+- anyone in the channel can toggle items on or off
+- checked items record who checked them in the markdown fallback
+- if the post is edited later, existing checked/unchecked state is preserved by matching items on their text
+- new items are added unchecked, and removed items drop out of the checklist
+
+## Installation
+
+### Option 1: Install a built release or local bundle
+
+1. Build the plugin bundle:
+
+   ```bash
+   make dist
+   ```
+
+2. Upload the generated bundle from `dist/` into Mattermost. The bundle name will look like:
+
+   ```text
+   dist/com.billerickson.mattermost-checklist-<version>.tar.gz
+   ```
+
+3. In Mattermost, go to **System Console → Plugin Management**.
+4. Enable plugin uploads if your server requires it.
+5. Upload the `.tar.gz` bundle and enable the plugin.
+
+After activation, the `/checklist` slash command is registered automatically.
+
+### Option 2: Deploy directly to a development server
+
+This repo includes Mattermost's `pluginctl` helper, so you can build and deploy in one step:
+
+```bash
+make deploy
+```
+
+`make deploy` uses Mattermost local mode when available. Otherwise, set one of these before running it:
+
+- `MM_SERVICESETTINGS_SITEURL`
+- `MM_ADMIN_TOKEN`
+
+Or:
+
+- `MM_SERVICESETTINGS_SITEURL`
+- `MM_ADMIN_USERNAME`
+- `MM_ADMIN_PASSWORD`
+
+## Development
+
+Standard Mattermost plugin targets still apply:
 
 ```bash
 make dist
+make deploy
+make watch
 ```
 
-This repo expects both Go and Node to be installed. In this workspace, the webapp can be built locally, but the server build cannot be verified until Go is available.
+To build with unminified JavaScript:
 
-### How do I build the plugin with unminified JavaScript?
-Setting the `MM_DEBUG` environment variable will invoke the debug builds. The simplist way to do this is to simply include this variable in your calls to `make` (e.g. `make dist MM_DEBUG=1`).
+```bash
+make dist MM_DEBUG=1
+```
+
+## Project layout
+
+- `server/checklist.go`: checklist parsing, state merging, slash command handling, and toggle/convert handlers
+- `server/api.go`: authenticated plugin routes
+- `server/plugin.go`: plugin activation, slash command registration, and message hooks
+- `webapp/src/components/checklist_post.tsx`: custom post renderer with interactive checklist items
+- `plugin.json`: Mattermost plugin manifest
