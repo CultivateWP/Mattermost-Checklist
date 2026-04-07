@@ -101,6 +101,47 @@ func (p *Plugin) MessageWillBePosted(c *plugin.Context, post *model.Post) (*mode
 	return post, ""
 }
 
+func (p *Plugin) MessageWillBeUpdated(c *plugin.Context, newPost, oldPost *model.Post) (*model.Post, string) {
+	if newPost == nil || oldPost == nil || strings.TrimSpace(newPost.Message) == "" {
+		return newPost, ""
+	}
+
+	if oldPost.Type != checklistPostType {
+		return newPost, ""
+	}
+
+	previousChecklist, err := checklistFromPost(oldPost)
+	if err != nil {
+		previousChecklist = nil
+	}
+
+	if propsChecklist, err := checklistFromPost(newPost); err == nil && checklistMatchesPostMessage(propsChecklist, newPost.Message) {
+		propsChecklist.CreatorID = oldPost.UserId
+		propsChecklist.UpdatedAt = model.GetMillis()
+		applyChecklistToPost(newPost, propsChecklist)
+		return newPost, ""
+	}
+
+	updatedChecklist, err := checklistFromMessage(newPost.Message, oldPost.UserId)
+	if err != nil {
+		return newPost, err.Error()
+	}
+
+	updatedChecklist = mergeChecklistState(previousChecklist, updatedChecklist)
+	updatedChecklist.CreatorID = oldPost.UserId
+	updatedChecklist.UpdatedAt = model.GetMillis()
+	applyChecklistToPost(newPost, updatedChecklist)
+	return newPost, ""
+}
+
+func checklistMatchesPostMessage(checklist *Checklist, message string) bool {
+	if checklist == nil {
+		return false
+	}
+
+	return strings.TrimSpace(renderChecklistMarkdown(checklist)) == strings.TrimSpace(message)
+}
+
 func ephemeralResponse(text string) *model.CommandResponse {
 	return &model.CommandResponse{
 		ResponseType: model.CommandResponseTypeEphemeral,

@@ -183,7 +183,7 @@ func checklistFromMessage(message, creatorID string) (*Checklist, error) {
 	if firstContentLine != "" {
 		if _, _, ok := extractTaskChecklistItem(firstContentLine); !ok {
 			if text, ok := extractChecklistItem(firstContentLine); !ok || text == "" {
-				title = strings.TrimSpace(strings.TrimPrefix(firstContentLine, "#"))
+				title = strings.TrimSpace(strings.TrimLeft(firstContentLine, "# "))
 			}
 		}
 	}
@@ -200,7 +200,7 @@ func extractTaskChecklistItem(line string) (string, bool, bool) {
 	trimmed := strings.TrimSpace(line)
 	for _, marker := range []string{"- [ ] ", "* [ ] ", "+ [ ] ", "- [x] ", "* [x] ", "+ [x] ", "- [X] ", "* [X] ", "+ [X] "} {
 		if strings.HasPrefix(trimmed, marker) {
-			text := strings.TrimSpace(strings.TrimPrefix(trimmed, marker))
+			text := normalizeChecklistItemText(strings.TrimSpace(strings.TrimPrefix(trimmed, marker)))
 			if text == "" {
 				return "", false, false
 			}
@@ -210,6 +210,19 @@ func extractTaskChecklistItem(line string) (string, bool, bool) {
 	}
 
 	return "", false, false
+}
+
+func normalizeChecklistItemText(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return ""
+	}
+
+	if annotationIndex := strings.LastIndex(trimmed, " _(checked by @"); annotationIndex >= 0 && strings.HasSuffix(trimmed, ")_") {
+		trimmed = strings.TrimSpace(trimmed[:annotationIndex])
+	}
+
+	return trimmed
 }
 
 func extractChecklistItem(line string) (string, bool) {
@@ -291,6 +304,46 @@ func applyChecklistToPost(post *model.Post, checklist *Checklist) {
 	post.Type = checklistPostType
 	post.Message = renderChecklistMarkdown(checklist)
 	post.Props[checklistPropsKey] = checklistToPropsValue(checklist)
+}
+
+func mergeChecklistState(previous, next *Checklist) *Checklist {
+	if next == nil {
+		return nil
+	}
+
+	if previous == nil {
+		return next
+	}
+
+	type preservedItem struct {
+		item ChecklistItem
+		used bool
+	}
+
+	preservedByText := make(map[string][]*preservedItem, len(previous.Items))
+	for _, item := range previous.Items {
+		itemCopy := item
+		key := strings.ToLower(strings.TrimSpace(item.Text))
+		preservedByText[key] = append(preservedByText[key], &preservedItem{item: itemCopy})
+	}
+
+	for index := range next.Items {
+		key := strings.ToLower(strings.TrimSpace(next.Items[index].Text))
+		for _, candidate := range preservedByText[key] {
+			if candidate.used {
+				continue
+			}
+
+			next.Items[index].Checked = candidate.item.Checked
+			next.Items[index].CheckedAt = candidate.item.CheckedAt
+			next.Items[index].CheckedBy = candidate.item.CheckedBy
+			next.Items[index].CheckedByUsername = candidate.item.CheckedByUsername
+			candidate.used = true
+			break
+		}
+	}
+
+	return next
 }
 
 func toggleChecklistItem(checklist *Checklist, itemID, userID, username string) error {

@@ -1,5 +1,6 @@
 import manifest from 'manifest';
 import React, {useEffect, useMemo, useState} from 'react';
+import type {MouseEvent} from 'react';
 
 import type {Post} from '@mattermost/types/posts';
 
@@ -72,7 +73,10 @@ export default function ChecklistPost({post}: Props) {
         return completionSummary(checklist);
     }, [checklist]);
 
-    const toggleItem = async (itemId: string) => {
+    const toggleItem = async (event: MouseEvent<HTMLButtonElement>, itemId: string) => {
+        event.preventDefault();
+        event.stopPropagation();
+
         if (!checklist || pendingItemId) {
             return;
         }
@@ -127,7 +131,8 @@ export default function ChecklistPost({post}: Props) {
                             type='button'
                             key={item.id}
                             className={`mm-checklist-post__item ${item.checked ? 'mm-checklist-post__item--checked' : ''}`}
-                            onClick={() => toggleItem(item.id)}
+                            onClick={(event) => toggleItem(event, item.id)}
+                            onMouseDown={(event) => event.stopPropagation()}
                             disabled={Boolean(pendingItemId)}
                         >
                             <span className='mm-checklist-post__checkbox'>{item.checked ? '✓' : ''}</span>

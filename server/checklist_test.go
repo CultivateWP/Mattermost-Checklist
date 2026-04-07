@@ -99,6 +99,60 @@ func TestChecklistFromTaskSyntaxMessage(t *testing.T) {
 	require.Equal(t, "Review screenshots", checklist.Items[1].Text)
 }
 
+func TestChecklistFromRenderedMessageStripsCheckedByAnnotation(t *testing.T) {
+	t.Parallel()
+
+	checklist, err := checklistFromMessage("### Weekly prep\n\n- [x] Review screenshots _(checked by @bill)_\n- [ ] Draft outline", "user-123")
+	require.NoError(t, err)
+	require.Equal(t, "Weekly prep", checklist.Title)
+	require.Len(t, checklist.Items, 2)
+	require.Equal(t, "Review screenshots", checklist.Items[0].Text)
+	require.True(t, checklist.Items[0].Checked)
+}
+
+func TestMergeChecklistStatePreservesCheckedItemsAndAddsNewOnes(t *testing.T) {
+	t.Parallel()
+
+	previous := &Checklist{
+		Title: "Weekly prep",
+		Items: []ChecklistItem{
+			{ID: "item-1", Text: "Draft outline"},
+			{ID: "item-2", Text: "Review screenshots", Checked: true, CheckedAt: 1234, CheckedBy: "user-1", CheckedByUsername: "bill"},
+		},
+	}
+	updated := &Checklist{
+		Title: "Weekly prep",
+		Items: []ChecklistItem{
+			{ID: "item-1", Text: "Review screenshots"},
+			{ID: "item-2", Text: "Draft outline"},
+			{ID: "item-3", Text: "Publish update"},
+		},
+	}
+
+	merged := mergeChecklistState(previous, updated)
+	require.Len(t, merged.Items, 3)
+	require.True(t, merged.Items[0].Checked)
+	require.Equal(t, "bill", merged.Items[0].CheckedByUsername)
+	require.False(t, merged.Items[1].Checked)
+	require.False(t, merged.Items[2].Checked)
+}
+
+func TestChecklistMatchesPostMessage(t *testing.T) {
+	t.Parallel()
+
+	checklist := &Checklist{
+		Title:     "Weekly prep",
+		CreatorID: "user-1",
+		Items: []ChecklistItem{
+			{ID: "item-1", Text: "Review screenshots", Checked: true, CheckedByUsername: "bill"},
+			{ID: "item-2", Text: "Draft outline"},
+		},
+	}
+
+	require.True(t, checklistMatchesPostMessage(checklist, renderChecklistMarkdown(checklist)))
+	require.False(t, checklistMatchesPostMessage(checklist, "### Weekly prep\n\n- [ ] Review screenshots\n- [ ] Draft outline"))
+}
+
 type PostAdapter struct {
 	Props map[string]any
 }
