@@ -1,9 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/mattermost/mattermost/server/public/model"
+	"github.com/mattermost/mattermost/server/public/plugin/plugintest"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,6 +29,86 @@ func TestParseChecklistCommandWithCustomTitle(t *testing.T) {
 	require.Equal(t, "Launch prep", checklist.Title)
 	require.Len(t, checklist.Items, 2)
 	require.Equal(t, "update release notes", checklist.Items[1].Text)
+}
+
+func TestThemeChecklist(t *testing.T) {
+	t.Parallel()
+
+	checklist := themeChecklist()
+	require.Equal(t, "Theme Build", checklist.Title)
+	require.Equal(t, []string{
+		"Site Header",
+		"Site Footer",
+		"Category Header",
+		"Page Header",
+		"Post Header",
+		"Comments",
+		"Fancy List",
+		"Quick Links",
+		"Post Listing",
+		"As Seen In",
+		"About",
+		"Author Box",
+		"Cookbook",
+		"Cookbook Banner",
+		"Email",
+		"Ebook",
+		"Save Recipe block",
+		"Social Promos",
+		"Personal Note",
+		"Featured Comment",
+		"Table of Contents",
+		"FAQ",
+		"Tip",
+		"WRPM Roundup",
+		"WPRM Food",
+	}, checklistItemTexts(checklist))
+
+	for index, item := range checklist.Items {
+		require.Equal(t, fmt.Sprintf("item-%d", index+1), item.ID)
+		require.False(t, item.Checked)
+	}
+}
+
+func checklistItemTexts(checklist *Checklist) []string {
+	texts := make([]string, len(checklist.Items))
+	for index, item := range checklist.Items {
+		texts[index] = item.Text
+	}
+	return texts
+}
+
+func TestExecuteThemeChecklistCommand(t *testing.T) {
+	t.Parallel()
+
+	api := &plugintest.API{}
+	var createdPost *model.Post
+	api.On("CreatePost", mock.AnythingOfType("*model.Post")).
+		Run(func(arguments mock.Arguments) {
+			createdPost = arguments.Get(0).(*model.Post)
+		}).
+		Return(&model.Post{}, (*model.AppError)(nil)).
+		Once()
+
+	p := &Plugin{}
+	p.SetAPI(api)
+	response, appErr := p.ExecuteCommand(nil, &model.CommandArgs{
+		Command:   "/theme-checklist",
+		UserId:    "user-1",
+		ChannelId: "channel-1",
+	})
+
+	require.Nil(t, appErr)
+	require.Equal(t, model.CommandResponseTypeEphemeral, response.ResponseType)
+	require.Equal(t, "Theme checklist posted.", response.Text)
+	require.NotNil(t, createdPost)
+	require.Equal(t, "user-1", createdPost.UserId)
+	require.Equal(t, "channel-1", createdPost.ChannelId)
+	require.Equal(t, checklistPostType, createdPost.Type)
+	require.Contains(t, createdPost.Message, "### Theme Build")
+	require.Contains(t, createdPost.Message, "- [ ] Site Header")
+	require.Contains(t, createdPost.Message, "- [ ] WPRM Food")
+	api.AssertExpectations(t)
 }
 
 func TestToggleChecklistItem(t *testing.T) {

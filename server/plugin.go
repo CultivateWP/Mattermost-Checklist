@@ -35,7 +35,7 @@ func (p *Plugin) OnActivate() error {
 		return err
 	}
 
-	return p.API.RegisterCommand(&model.Command{
+	if err := p.API.RegisterCommand(&model.Command{
 		Trigger:          checklistCommandTrigger,
 		AutoComplete:     true,
 		AutoCompleteDesc: "Create a collaborative checklist message",
@@ -44,6 +44,19 @@ func (p *Plugin) OnActivate() error {
 			checklistCommandTrigger,
 			"[title ::] item one | item two | item three",
 			"Create a shared checklist in the current channel",
+		),
+	}); err != nil {
+		return err
+	}
+
+	return p.API.RegisterCommand(&model.Command{
+		Trigger:          themeChecklistCommandTrigger,
+		AutoComplete:     true,
+		AutoCompleteDesc: "Post the standard Theme Build checklist",
+		AutocompleteData: model.NewAutocompleteData(
+			themeChecklistCommandTrigger,
+			"",
+			"Post the standard Theme Build checklist in the current channel",
 		),
 	})
 }
@@ -57,6 +70,19 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 	switch strings.TrimPrefix(fields[0], "/") {
 	case checklistCommandTrigger:
 		response, err := p.executeChecklistCommand(args)
+		if err != nil {
+			return nil, model.NewAppError(
+				"ExecuteCommand",
+				"plugin.command.execute_command.app_error",
+				nil,
+				err.Error(),
+				http.StatusInternalServerError,
+			)
+		}
+
+		return response, nil
+	case themeChecklistCommandTrigger:
+		response, err := p.executeThemeChecklistCommand(args)
 		if err != nil {
 			return nil, model.NewAppError(
 				"ExecuteCommand",

@@ -12,10 +12,11 @@ import (
 )
 
 const (
-	checklistCommandTrigger = "checklist"
-	checklistPostType       = "custom_checklist"
-	checklistPropsKey       = "checklist"
-	defaultChecklistTitle   = "Checklist"
+	checklistCommandTrigger      = "checklist"
+	themeChecklistCommandTrigger = "theme-checklist"
+	checklistPostType            = "custom_checklist"
+	checklistPropsKey            = "checklist"
+	defaultChecklistTitle        = "Checklist"
 )
 
 var (
@@ -45,6 +46,58 @@ func (p *Plugin) executeChecklistCommand(args *model.CommandArgs) (*model.Comman
 		return ephemeralResponse(err.Error()), nil
 	}
 
+	return p.createChecklistPost(args, checklist, "Checklist posted.")
+}
+
+func (p *Plugin) executeThemeChecklistCommand(args *model.CommandArgs) (*model.CommandResponse, error) {
+	return p.createChecklistPost(args, themeChecklist(), "Theme checklist posted.")
+}
+
+func themeChecklist() *Checklist {
+	itemTexts := []string{
+		"Site Header",
+		"Site Footer",
+		"Category Header",
+		"Page Header",
+		"Post Header",
+		"Comments",
+		"Fancy List",
+		"Quick Links",
+		"Post Listing",
+		"As Seen In",
+		"About",
+		"Author Box",
+		"Cookbook",
+		"Cookbook Banner",
+		"Email",
+		"Ebook",
+		"Save Recipe block",
+		"Social Promos",
+		"Personal Note",
+		"Featured Comment",
+		"Table of Contents",
+		"FAQ",
+		"Tip",
+		"WRPM Roundup",
+		"WPRM Food",
+	}
+
+	items := make([]ChecklistItem, len(itemTexts))
+	for index, text := range itemTexts {
+		items[index] = ChecklistItem{
+			ID:   fmt.Sprintf("item-%d", index+1),
+			Text: text,
+		}
+	}
+
+	return &Checklist{
+		Title: "Theme Build",
+		Items: items,
+	}
+}
+
+func (p *Plugin) createChecklistPost(args *model.CommandArgs, checklist *Checklist, confirmation string) (*model.CommandResponse, error) {
+
 	checklist.CreatorID = args.UserId
 	checklist.UpdatedAt = model.GetMillis()
 
@@ -62,7 +115,7 @@ func (p *Plugin) executeChecklistCommand(args *model.CommandArgs) (*model.Comman
 		return nil, fmt.Errorf("create checklist post: %w", appErr)
 	}
 
-	return ephemeralResponse("Checklist posted."), nil
+	return ephemeralResponse(confirmation), nil
 }
 
 func parseChecklistCommand(command string) (*Checklist, error) {
@@ -470,6 +523,6 @@ func (p *Plugin) handleConvertPostToChecklist(w http.ResponseWriter, r *http.Req
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"checklist": updatedChecklist,
-		"post_id":    updatedPost.Id,
+		"post_id":   updatedPost.Id,
 	})
 }

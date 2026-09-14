@@ -4,7 +4,7 @@ This Mattermost plugin turns checklist-style posts into shared, interactive chec
 
 ## Current usage
 
-The plugin supports two ways to create a checklist.
+The plugin supports three ways to create a checklist.
 
 ### 1. Use the `/checklist` slash command
 
@@ -27,7 +27,17 @@ That creates a custom checklist post with:
 - shared state for the whole channel
 - markdown fallback in the post body for clients that do not render the custom UI
 
-### 2. Post a normal Mattermost task list
+### 2. Use the `/theme-checklist` slash command
+
+Post the standard Theme Build checklist with all items initially unchecked:
+
+```text
+/theme-checklist
+```
+
+The command creates the same interactive, collaborative checklist post as `/checklist`.
+
+### 3. Post a normal Mattermost task list
 
 If someone posts a standard Mattermost markdown task list, the plugin automatically converts it into an interactive checklist post.
 
@@ -76,7 +86,7 @@ Once a post is a checklist:
 4. Enable plugin uploads if your server requires it.
 5. Upload the `.tar.gz` bundle and enable the plugin.
 
-After activation, the `/checklist` slash command is registered automatically.
+After activation, the `/checklist` and `/theme-checklist` slash commands are registered automatically.
 
 ### Option 2: Deploy directly to a development server
 
